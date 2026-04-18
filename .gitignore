@@ -12,6 +12,7 @@ data_raw/
 .DS_Store
 .venv
 wandb/
+checkpoints/
 # Distribution / packaging
 .Python
 build/

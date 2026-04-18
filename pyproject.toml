@@ -20,9 +20,14 @@ dependencies = [
     "wandb>=0.26.0",
     "albumentations>=1.4",
     "opencv-python-headless>=4.9",
-    "ruff>=0.15.11",
-    "ty>=0.0.31",
-    "black>=26.3.1",
+    "pyspm>=0.6",
+    "plotly>=6.0",
+    "scikit-image>=0.24",
+    "seaborn>=0.13",
+    "nbformat>=5.10.4",
+    "fastapi>=0.136.0",
+    "uvicorn[standard]>=0.44.0",
+    "python-multipart>=0.0.26",
 ]
 
 [tool.uv]
@@ -41,87 +46,4 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
-
-
-[tool.ruff]
-exclude = [
-    ".bzr",
-    ".direnv",
-    ".eggs",
-    ".git",
-    ".git-rewrite",
-    ".hg",
-    ".mypy_cache",
-    ".nox",
-    ".pants.d",
-    ".pytype",
-    ".ruff_cache",
-    ".svn",
-    ".tox",
-    ".venv",
-    "__pypackages__",
-    "_build",
-    "buck-out",
-    "build",
-    "dist",
-    "node_modules",
-    "venv",
-    "models.py"
-]
-
-
-# Same as Black.
-line-length = 88
-target-version = "py312"
-
-
-[tool.ruff.lint]
-#https://beta.ruff.rs/docs/rules/
-select = [
-    "E",  # pycodestyle errors
-    "W",  # pycodestyle warnings
-    "F",  # pyflakes
-    "I",  # isort
-    "C",  # flake8-comprehensions
-    "B",  # flake8-bugbear
-    "G",
-    "SIM1",
-    "PLE",
-    "N802", "N803", "N815", "N816","N806",
-    "ANN",
-    "C901",
-    "UP",  # pyupgrade,
-    "T201", # check if print statement exists
-    "PLR0915"
-]
-ignore = [
-    "E501",  # line too long, handled by black
-    "B008",  # do not perform function calls in argument defaults
-    "C901",  # too complex
-    "G004",
-    "ANN101",
-    "ANN003",
-    "B904",
-    "G201"
-]
-# Allow unused variables when underscore-prefixed.
-dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
-
-
-# Allow autofix for all enabled rules (when `--fix`) is provided.
-fixable = ["A", "B", "C", "D", "E", "F", "G", "I", "N", "Q", "S", "T", "W", "ANN", "ARG", "BLE", "COM", "DJ", "DTZ", "EM", "ERA", "EXE", "FBT", "ICN", "INP", "ISC", "NPY", "PD", "PGH", "PIE", "PL", "PT", "PTH", "PYI", "RET", "RSE", "RUF", "SIM", "SLF", "TCH", "TID", "TRY", "UP", "YTT"]
-unfixable = []
-
-[tool.ruff.lint.pylint]
-max-statements = 60
-
-[tool.ruff.lint.mccabe]
-# Unlike Flake8, default to a complexity level of 10.
-max-complexity = 10
-
-[tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"]
-
-[tool.ruff.lint.isort]
-known-third-party = ["fastapi", "pydantic", "starlette"]
+packages = ["tearcls"]

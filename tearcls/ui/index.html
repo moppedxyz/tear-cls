@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tear Gallery — AFM 3D viewer + classifier</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three":         "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #1a1d24;
+    --panel2: #20242e;
+    --text: #e6e6e6;
+    --muted: #8a93a6;
+    --accent: #6cb6ff;
+    --ok: #7bd88f;
+    --border: #2a2f3a;
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { padding: 12px 20px; border-bottom: 1px solid var(--border);
+    display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+  h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: 0.02em; }
+  h1 .brand { color: var(--accent); }
+  .hint { color: var(--muted); font-size: 12px; }
+
+  nav.tabs { display: flex; gap: 4px; margin-left: auto; }
+  nav.tabs button {
+    background: transparent; color: var(--muted); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 14px; cursor: pointer; font: inherit;
+  }
+  nav.tabs button:hover { color: var(--text); border-color: #3a4050; }
+  nav.tabs button.active { color: var(--text); background: var(--panel); border-color: var(--accent); }
+
+  main { display: grid; grid-template-columns: 1fr 340px; gap: 16px;
+    padding: 16px; height: calc(100vh - 60px); box-sizing: border-box; }
+
+  .views { position: relative; min-height: 0; min-width: 0; }
+  .view { position: absolute; inset: 0; display: none; }
+  .view.active { display: block; }
+
+  #plot-surface { position: absolute; inset: 0; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 6px; }
+
+  .gallery-layout { position: absolute; inset: 0; display: grid;
+    grid-template-columns: 260px 1fr; gap: 12px; min-height: 0; }
+
+  .gallery-list {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 6px; overflow: auto; padding: 8px;
+  }
+  .gallery-list .group-head {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--muted); padding: 10px 8px 4px; font-weight: 600;
+  }
+  .gallery-item {
+    padding: 6px 10px; border-radius: 4px; cursor: pointer;
+    font-size: 12px; color: var(--text); display: flex; gap: 6px; align-items: center;
+    border: 1px solid transparent;
+  }
+  .gallery-item:hover { background: var(--panel2); }
+  .gallery-item.active { background: var(--panel2); border-color: var(--accent); }
+  .gallery-item .dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 8px; }
+  .gallery-item .name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gallery-item .sz { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+
+  .gallery-art { display: grid; min-height: 0; min-width: 0;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "mug print"
+      "rainbow rainbow";
+    gap: 12px;
+  }
+  .tile {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 6px; display: flex; flex-direction: column;
+    min-height: 0; min-width: 0; overflow: hidden;
+  }
+  .tile.mug { grid-area: mug; }
+  .tile.print { grid-area: print; }
+  .tile.rainbow { grid-area: rainbow; }
+  .tile h3 {
+    margin: 0; padding: 8px 12px; font-size: 12px; font-weight: 600;
+    color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .mug-canvas { flex: 1 1 auto; min-height: 0; background: #13161e;
+    display: block; width: 100%; }
+
+  .print-container {
+    flex: 1 1 auto; min-height: 0; display: flex;
+    align-items: center; justify-content: center;
+    padding: 16px; background: #0b0d12;
+  }
+  #print-img {
+    max-width: 100%; max-height: 100%;
+    border: 10px solid #f0ede3;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.55), 0 2px 6px rgba(0,0,0,0.35);
+    display: none; background: #0b0d12;
+  }
+  .print-placeholder { color: var(--muted); font-size: 12px; }
+
+  .rainbow-body {
+    padding: 12px; display: grid; grid-template-columns: 1.4fr 1fr;
+    gap: 12px; align-items: center;
+  }
+
+  aside { background: var(--panel); border: 1px solid var(--border);
+    border-radius: 6px; padding: 16px; overflow: auto; }
+  label.file {
+    display: block; padding: 10px 12px; border: 1px dashed var(--border);
+    border-radius: 6px; text-align: center; cursor: pointer;
+    color: var(--muted); transition: border-color 0.1s, color 0.1s;
+  }
+  label.file:hover { border-color: var(--accent); color: var(--accent); }
+  label.file input { display: none; }
+  .section { margin-top: 18px; }
+  .section h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--muted); margin: 0 0 8px; font-weight: 600; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; }
+  .kv .k { color: var(--muted); }
+  .kv .v { color: var(--text); font-variant-numeric: tabular-nums; word-break: break-word; }
+  .pred { font-size: 18px; font-weight: 600; color: var(--ok); }
+  .bar { display: grid; grid-template-columns: 120px 1fr 56px;
+    gap: 8px; align-items: center; margin-bottom: 4px; font-size: 13px; }
+  .bar .track { background: #0b0d12; border-radius: 3px; height: 8px;
+    position: relative; overflow: hidden; }
+  .bar .fill { height: 100%; }
+  .bar .pct { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+  .err { color: #ff8a8a; white-space: pre-wrap; }
+  .busy { color: var(--accent); }
+  .nomodel { color: var(--muted); font-size: 13px; padding: 6px 0; }
+
+  .swatch {
+    height: 56px; border-radius: 6px; border: 1px solid var(--border);
+    background: #2a2f3a; display: flex; align-items: center; justify-content: center;
+    color: rgba(0,0,0,0.6); font-weight: 600; letter-spacing: 0.04em;
+    font-size: 12px; text-shadow: 0 1px 2px rgba(255,255,255,0.4);
+  }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--text); }
+  .chip { display: flex; align-items: center; gap: 4px; }
+  .chip .dot { width: 10px; height: 10px; border-radius: 50%; }
+
+  #play-melody {
+    width: 100%; padding: 8px; font: inherit; font-weight: 600;
+    background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; cursor: pointer; margin-top: 8px;
+  }
+  #play-melody:hover { border-color: var(--accent); color: var(--accent); }
+  #play-melody:disabled { color: var(--muted); cursor: not-allowed; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="brand">Tear</span> Gallery · AFM 3D viewer + classifier</h1>
+  <span class="hint">Upload a raw Bruker scan or pick one from the gallery.</span>
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-tab="surface">Surface</button>
+    <button class="tab" data-tab="gallery">Gallery</button>
+  </nav>
+</header>
+<main>
+  <section class="views">
+    <div class="view view-surface active">
+      <div id="plot-surface"></div>
+    </div>
+    <div class="view view-gallery">
+      <div class="gallery-layout">
+        <div class="gallery-list" id="gallery-list"></div>
+        <div class="gallery-art">
+          <div class="tile mug">
+            <h3>Mug</h3>
+            <canvas id="mug-canvas" class="mug-canvas"></canvas>
+          </div>
+          <div class="tile print">
+            <h3>Printable picture</h3>
+            <div class="print-container">
+              <img id="print-img" alt="AFM render">
+              <span class="print-placeholder" id="print-placeholder">Pick a gallery item or upload a scan.</span>
+            </div>
+          </div>
+          <div class="tile rainbow">
+            <h3>Rainbow signature + Melody</h3>
+            <div class="rainbow-body">
+              <div>
+                <div id="swatch" class="swatch">awaiting scan…</div>
+                <div id="chips" class="chips" style="margin-top:8px"></div>
+              </div>
+              <div>
+                <button id="play-melody" disabled>▶ Play tear notification</button>
+                <div class="hint" style="margin-top:6px">4-note chime from the AFM height profile.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+  <aside>
+    <label class="file">
+      <span id="file-label">Upload raw Bruker file</span>
+      <input id="file" type="file" accept="*/*">
+    </label>
+    <div id="status" class="section hint">Idle.</div>
+
+    <div class="section" id="meta-section" hidden>
+      <h2>Scan metadata</h2>
+      <div id="meta" class="kv"></div>
+    </div>
+
+    <div class="section" id="pred-section" hidden>
+      <h2>Classification</h2>
+      <div id="pred" class="pred"></div>
+      <div id="probs"></div>
+    </div>
+  </aside>
+</main>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const $ = (id) => document.getElementById(id);
+
+// ---------- shared state ------------------------------------------------
+const STATE = {
+  grid: null, meta: null, probs: null, prediction: null, features: null,
+  signature: null,
+  classes: [],        // canonical class list (from server)
+  targets: [],        // target groupings (from server)
+};
+let galleryItems = [];
+let activeGalleryId = null;
+let audioCtx = null;
+
+function setStatus(msg, cls) {
+  const el = $("status");
+  el.className = "section " + (cls || "hint");
+  el.textContent = msg;
+}
+
+// ---------- Scalable N-class palette -----------------------------------
+// Class → hue is driven by the class's position in the server's class
+// list: hue_i = 360 · i / N. That keeps classes visually spread out no
+// matter how many there are, and ignoring class names means the logic
+// scales unchanged to any classifier.
+function hueFor(className) {
+  const list = STATE.classes;
+  const idx = list.indexOf(className);
+  if (idx >= 0 && list.length > 0) return (idx / list.length) * 360;
+  // Fallback for unknown classes: FNV-1a hash → hue.
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < className.length; i++) {
+    h ^= className.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h % 360;
+}
+function rgbFor(className, s = 65, l = 60) { return hslToRgb(hueFor(className), s, l); }
+function cssFor(className) { const [r,g,b] = rgbFor(className); return `rgb(${r},${g},${b})`; }
+
+function hslToRgb(h, s, l) {
+  // HSL in (deg, %, %) -> RGB in [0, 255].
+  h /= 360; s /= 100; l /= 100;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => {
+    const k = (n + h * 12) % 12;
+    return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+  };
+  return [f(0), f(8), f(4)].map(v => Math.round(v * 255));
+}
+function rgbString(r,g,b) { return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`; }
+
+// ---------- Surface plot ----------------------------------------------
+function renderSurface(grid, meta) {
+  const h = grid.length, w = grid[0].length;
+  const dx = (meta.x_size || w) / Math.max(1, w - 1);
+  const dy = (meta.y_size || h) / Math.max(1, h - 1);
+  const xs = Array.from({length: w}, (_, i) => i * dx);
+  const ys = Array.from({length: h}, (_, j) => j * dy);
+  const data = [{
+    type: "surface",
+    x: xs, y: ys, z: grid,
+    colorscale: "Viridis",
+    contours: { z: { show: true, usecolormap: true, highlightcolor: "#fff", project: { z: true } } },
+    colorbar: { title: { text: meta.z_unit || "z" }, thickness: 14, tickfont: { color: "#e6e6e6" } },
+    lighting: { ambient: 0.55, diffuse: 0.7, roughness: 0.9, specular: 0.1 },
+  }];
+  const layout = {
+    paper_bgcolor: "#1a1d24",
+    font: { color: "#e6e6e6", size: 10 },
+    margin: { l: 0, r: 0, t: 0, b: 0 },
+    scene: {
+      xaxis: { title: { text: "x (" + (meta.x_unit || "px") + ")" }, gridcolor: "#2a2f3a", zerolinecolor: "#2a2f3a" },
+      yaxis: { title: { text: "y (" + (meta.x_unit || "px") + ")" }, gridcolor: "#2a2f3a", zerolinecolor: "#2a2f3a" },
+      zaxis: { title: { text: meta.z_unit || "z" }, gridcolor: "#2a2f3a", zerolinecolor: "#2a2f3a" },
+      aspectmode: "manual",
+      aspectratio: { x: 1, y: 1, z: 0.4 },
+      camera: { eye: { x: 1.5, y: -1.5, z: 0.9 } },
+    },
+  };
+  Plotly.react("plot-surface", data, layout, { responsive: true, displaylogo: false });
+}
+
+// ---------- Meta + prediction sidebars --------------------------------
+function renderMeta(meta) {
+  const rows = [];
+  if (meta.filename) rows.push(["File", meta.filename]);
+  if (meta.folder)   rows.push(["Folder", meta.folder]);
+  if (meta.target)   rows.push(["Ground truth", meta.target]);
+  rows.push(
+    ["Source",        meta.source],
+    ["Original size", meta.orig_shape.join(" × ") + " px"],
+    ["Rendered grid", meta.grid_shape.join(" × ") + " px"],
+    ["Scan extent",   meta.x_size ? meta.x_size.toFixed(2) + " × " + meta.y_size.toFixed(2) + " " + meta.x_unit : "—"],
+    ["Z range",       meta.z_min.toFixed(3) + " … " + meta.z_max.toFixed(3) + " " + meta.z_unit],
+  );
+  $("meta").innerHTML = rows.map(([k,v]) =>
+    `<div class="k">${k}</div><div class="v">${v}</div>`).join("");
+  $("meta-section").hidden = false;
+}
+
+function renderPrediction(pred, probs) {
+  $("pred-section").hidden = false;
+  if (pred == null) {
+    $("pred").textContent = "";
+    $("probs").innerHTML = `<div class="nomodel">Model checkpoint not loaded — run §2.4 of <code>eda.ipynb</code> to enable predictions.</div>`;
+    return;
+  }
+  $("pred").textContent = pred;
+  $("pred").style.color = cssFor(pred);
+  const entries = Object.keys(probs)
+    .map((c) => [c, probs[c] || 0])
+    .sort((a, b) => b[1] - a[1]);
+  $("probs").innerHTML = entries.map(([c, p]) => `
+    <div class="bar">
+      <div>${c}</div>
+      <div class="track"><div class="fill" style="width:${(p*100).toFixed(1)}%; background:${cssFor(c)}"></div></div>
+      <div class="pct">${(p*100).toFixed(1)}%</div>
+    </div>`).join("");
+}
+
+// ---------- Signature color --------------------------------------------
+function signatureHue(features) {
+  if (!features) return 210;
+  const keys = ["Ra_nm","Rq_nm","Rsk","Rku","PSD_slope","Sdr","z_std_nm","z_range_nm"];
+  let h = 2166136261 >>> 0;
+  for (const k of keys) {
+    const v = features[k];
+    const s = (v == null || !isFinite(v)) ? "nan" : Number(v).toFixed(4);
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+  }
+  return h % 360;
+}
+function signatureColor(features, probs) {
+  const hue = signatureHue(features);
+  const conf = Math.max(0, ...Object.values(probs || {0:0}));
+  const sat = Math.round(55 + conf * 35);
+  return { hue, css: `hsl(${hue}, ${sat}%, 58%)` };
+}
+
+function mixRainbow(probs) {
+  if (!probs || Object.keys(probs).length === 0) return null;
+  let r=0, g=0, b=0, total=0;
+  for (const [c, p] of Object.entries(probs)) {
+    if (!(p > 0)) continue;
+    const [cr,cg,cb] = rgbFor(c);
+    r += p*cr; g += p*cg; b += p*cb; total += p;
+  }
+  if (total <= 0) return null;
+  return [r/total, g/total, b/total];
+}
+
+function renderRainbow(probs, signature) {
+  const mix = mixRainbow(probs);
+  const sw = $("swatch");
+  if (mix == null && !signature) {
+    sw.style.background = "#2a2f3a";
+    sw.textContent = "no classifier";
+  } else {
+    const left  = mix ? rgbString(...mix) : (signature ? signature.css : "#2a2f3a");
+    const right = signature ? signature.css : left;
+    sw.style.background = `linear-gradient(90deg, ${left} 0%, ${right} 100%)`;
+    const hex = mix ? ("#" + mix.map(v => Math.round(v).toString(16).padStart(2,"0")).join("")).toUpperCase() : "—";
+    const hueStr = signature ? `sig ${signature.hue}°` : "";
+    sw.textContent = [hex, hueStr].filter(Boolean).join("  ·  ");
+  }
+  const classes = Object.keys(probs || {});
+  $("chips").innerHTML = classes.map((c) => {
+    const p = (probs && probs[c]) || 0;
+    return `<span class="chip"><span class="dot" style="background:${cssFor(c)}"></span>${c} ${(p*100).toFixed(0)}%</span>`;
+  }).join("");
+}
+
+// ---------- Melody (notification-length) ------------------------------
+// 4-note chime + soft resolution tone. ~0.6s total. Pitch + timbre come
+// from the scan's signature hue + height-trace quartiles; different scans
+// play different chimes even if they share a class.
+const SCALE_MAJOR = [261.63, 329.63, 392.00, 523.25, 659.25, 783.99];
+const SCALE_MINOR = [261.63, 311.13, 392.00, 523.25, 622.25, 783.99];
+
+function gridQuartiles(grid, n) {
+  // Down-sample to n row means, then pick the quartile-ranked values so
+  // a short chime still reflects the whole grid's height distribution.
+  const H = grid.length, W = grid[0].length;
+  const means = [];
+  for (let i = 0; i < H; i++) {
+    let s = 0;
+    for (let j = 0; j < W; j++) s += grid[i][j];
+    means.push(s / W);
+  }
+  const sorted = means.slice().sort((a, b) => a - b);
+  const picks = [];
+  for (let i = 0; i < n; i++) {
+    const idx = Math.min(sorted.length - 1, Math.floor((i + 0.5) / n * sorted.length));
+    picks.push(sorted[idx]);
+  }
+  return picks;
+}
+
+function scheduleNote(ctx, master, t, freq, dur, type, gain) {
+  const osc = ctx.createOscillator();
+  const env = ctx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  const ramp = Math.min(0.018, dur * 0.3);
+  env.gain.setValueAtTime(0, t);
+  env.gain.linearRampToValueAtTime(gain, t + ramp);
+  env.gain.linearRampToValueAtTime(gain * 0.55, t + dur * 0.6);
+  env.gain.linearRampToValueAtTime(0, t + dur);
+  osc.connect(env).connect(master);
+  osc.start(t);
+  osc.stop(t + dur);
+}
+
+async function playMelody() {
+  if (!STATE.grid) return;
+  if (!audioCtx) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) { setStatus("Web Audio not supported.", "err"); return; }
+    audioCtx = new Ctx();
+  }
+  if (audioCtx.state === "suspended") await audioCtx.resume();
+
+  const N = 4;                         // notification = 4 notes
+  const picks = gridQuartiles(STATE.grid, N);
+  const lo = Math.min(...picks), hi = Math.max(...picks);
+  const range = Math.max(1e-9, hi - lo);
+
+  const hue = STATE.signature?.hue ?? 200;
+  const warm = (hue < 60 || hue >= 300);
+  const scale = warm ? SCALE_MAJOR : SCALE_MINOR;
+
+  const step = 0.11;                   // 4 × 110 ms = 440 ms
+  const t0 = audioCtx.currentTime + 0.03;
+  const master = audioCtx.createGain();
+  master.gain.value = 0.22;
+  master.connect(audioCtx.destination);
+
+  for (let i = 0; i < N; i++) {
+    const r = (picks[i] - lo) / range;
+    const idx = Math.min(scale.length - 1, Math.floor(r * scale.length));
+    const f = scale[idx];
+    const vel = 0.4 + r * 0.35;
+    scheduleNote(audioCtx, master, t0 + i * step, f, step * 0.95, "triangle", vel);
+  }
+  // Soft tonic bell at the end (150 ms).
+  scheduleNote(audioCtx, master, t0 + N * step, scale[0] * 2, 0.18, "sine", 0.28);
+
+  const total = N * step + 0.22;
+  const btn = $("play-melody");
+  btn.disabled = true;
+  setTimeout(() => { btn.disabled = false; }, total * 1000);
+}
+$("play-melody").addEventListener("click", playMelody);
+
+// ---------- Three.js mug (real 3D model + BMP texture) ----------------
+const MUG = { ready: false };
+
+function initMug() {
+  const canvas = $("mug-canvas");
+  const container = canvas.parentElement;
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x13161e);
+
+  const cam = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
+  cam.position.set(3.2, 1.6, 3.8);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+  const key = new THREE.DirectionalLight(0xffffff, 0.9);
+  key.position.set(4, 5, 6); scene.add(key);
+  const fill = new THREE.DirectionalLight(0xb0c4ff, 0.35);
+  fill.position.set(-5, 2, -3); scene.add(fill);
+
+  // --- mug body: open-top cylinder, inside + outside rendered ---
+  const bodyGeo = new THREE.CylinderGeometry(1.0, 0.93, 2.1, 96, 1, true);
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff, roughness: 0.5, metalness: 0.04,
+    side: THREE.DoubleSide,
+  });
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  scene.add(body);
+
+  // --- bottom disc (outside view) ---
+  const bottomGeo = new THREE.CircleGeometry(0.93, 96);
+  const bottomMat = new THREE.MeshStandardMaterial({ color: 0xefeae0, roughness: 0.6 });
+  const bottom = new THREE.Mesh(bottomGeo, bottomMat);
+  bottom.rotation.x = Math.PI / 2;
+  bottom.position.y = -1.05;
+  scene.add(bottom);
+
+  // --- hollow interior: inner cylinder + inner floor so the mug reads hollow ---
+  const innerBodyGeo = new THREE.CylinderGeometry(0.92, 0.86, 1.96, 96, 1, true);
+  const innerMat = new THREE.MeshStandardMaterial({
+    color: 0xd3cfc4, roughness: 0.9, side: THREE.BackSide,
+  });
+  const innerBody = new THREE.Mesh(innerBodyGeo, innerMat);
+  innerBody.position.y = 0.02;
+  scene.add(innerBody);
+
+  const innerFloorGeo = new THREE.CircleGeometry(0.9, 96);
+  const innerFloor = new THREE.Mesh(innerFloorGeo, innerMat);
+  innerFloor.rotation.x = -Math.PI / 2;
+  innerFloor.position.y = -0.93;
+  scene.add(innerFloor);
+
+  // --- rim torus on top ---
+  const rimGeo = new THREE.TorusGeometry(0.995, 0.028, 20, 96);
+  const rimMat = new THREE.MeshStandardMaterial({ color: 0xefeae0, roughness: 0.4 });
+  const rim = new THREE.Mesh(rimGeo, rimMat);
+  rim.rotation.x = Math.PI / 2;
+  rim.position.y = 1.05;
+  scene.add(rim);
+
+  // --- handle: half torus, arc in the XY plane with peak bulging +X ---
+  // Default TorusGeometry lies in XY with axis Z and arcs CCW from +X
+  // through +Y to −X. Rotating −90° about Z puts endpoints on the Y axis
+  // (±R_arc) and the peak on +X. Then translate by (R_mug, 0, 0) to attach
+  // the handle to the mug wall at two points vertically separated along Y.
+  const handleGeo = new THREE.TorusGeometry(0.48, 0.1, 20, 48, Math.PI);
+  const handleMat = new THREE.MeshStandardMaterial({ color: 0xefeae0, roughness: 0.45 });
+  const handle = new THREE.Mesh(handleGeo, handleMat);
+  handle.rotation.z = -Math.PI / 2;
+  handle.position.set(1.0, 0, 0);
+  scene.add(handle);
+
+  const controls = new OrbitControls(cam, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.minDistance = 2.4;
+  controls.maxDistance = 8;
+  controls.target.set(0, 0, 0);
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = 0.8;
+
+  function resize() {
+    const w = container.clientWidth, h = container.clientHeight;
+    if (w === 0 || h === 0) return;
+    renderer.setSize(w, h, false);
+    cam.aspect = w / h;
+    cam.updateProjectionMatrix();
+  }
+  const ro = new ResizeObserver(resize);
+  ro.observe(container);
+  resize();
+
+  function animate() {
+    controls.update();
+    renderer.render(scene, cam);
+    MUG.raf = requestAnimationFrame(animate);
+  }
+  animate();
+
+  Object.assign(MUG, { ready: true, renderer, scene, cam, body, bodyMat, resize });
+}
+
+function setMugTexture(url) {
+  if (!MUG.ready) return;
+  const loader = new THREE.TextureLoader();
+  loader.load(url, (tex) => {
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.anisotropy = 4;
+    if (MUG.bodyMat.map) MUG.bodyMat.map.dispose();
+    MUG.bodyMat.map = tex;
+    MUG.bodyMat.color.set(0xffffff);
+    MUG.bodyMat.needsUpdate = true;
+  });
+}
+
+// ---------- Canvas render from grid (for uploads — no BMP available) --
+function viridisLike(t) {
+  const stops = [
+    [68, 1, 84], [59, 82, 139], [33, 145, 140],
+    [94, 201, 98], [253, 231, 37],
+  ];
+  const f = Math.max(0, Math.min(0.9999, t)) * (stops.length - 1);
+  const i = Math.floor(f), u = f - i;
+  const a = stops[i], b = stops[i + 1] || a;
+  return [a[0]+(b[0]-a[0])*u, a[1]+(b[1]-a[1])*u, a[2]+(b[2]-a[2])*u];
+}
+
+function gridToDataURL(grid) {
+  const H = grid.length, W = grid[0].length;
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  const img = ctx.createImageData(W, H);
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i < H; i++) for (let j = 0; j < W; j++) {
+    const v = grid[i][j];
+    if (v < lo) lo = v; if (v > hi) hi = v;
+  }
+  const range = Math.max(1e-9, hi - lo);
+  for (let i = 0; i < H; i++) {
+    for (let j = 0; j < W; j++) {
+      const [r,g,b] = viridisLike((grid[i][j] - lo) / range);
+      const off = (i * W + j) * 4;
+      img.data[off]   = r;
+      img.data[off+1] = g;
+      img.data[off+2] = b;
+      img.data[off+3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return canvas.toDataURL("image/png");
+}
+
+// ---------- Print tile -------------------------------------------------
+function setPrintImage(url) {
+  const img = $("print-img");
+  img.src = url;
+  img.style.display = "block";
+  $("print-placeholder").style.display = "none";
+}
+
+// ---------- Tab switching ---------------------------------------------
+$("tabs").addEventListener("click", (e) => {
+  const btn = e.target.closest("button.tab");
+  if (!btn) return;
+  document.querySelectorAll("nav.tabs button").forEach(b => b.classList.toggle("active", b === btn));
+  const tab = btn.dataset.tab;
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  document.querySelector(".view-" + tab).classList.add("active");
+  setTimeout(() => {
+    if (tab === "surface") Plotly.Plots.resize($("plot-surface"));
+    if (tab === "gallery") { if (MUG.resize) MUG.resize(); }
+  }, 60);
+});
+
+// ---------- Gallery list ----------------------------------------------
+async function loadGalleryManifest() {
+  try {
+    const r = await fetch("/gallery");
+    if (!r.ok) throw new Error(r.status + ": " + await r.text());
+    const data = await r.json();
+    galleryItems = data.items || [];
+    STATE.classes = data.classes || [];
+    STATE.targets = data.targets || [];
+  } catch (e) {
+    setStatus("Gallery manifest failed: " + e.message, "err");
+    galleryItems = [];
+  }
+  renderGalleryList();
+}
+
+function renderGalleryList() {
+  const groups = {};
+  for (const it of galleryItems) (groups[it.target] = groups[it.target] || []).push(it);
+  const order = STATE.targets.length ? STATE.targets : Object.keys(groups);
+  const html = order.filter(k => groups[k]).map(k => {
+    const items = groups[k];
+    const hue = hueFor(k);
+    const dotCss = `hsl(${hue}, 65%, 60%)`;
+    const rows = items.map(it => `
+      <div class="gallery-item" data-id="${it.id}" title="${it.bmp_rel}">
+        <span class="dot" style="background:${dotCss}"></span>
+        <span class="name">${it.folder} / ${it.filename}</span>
+        <span class="sz">${(it.size / (1024*1024)).toFixed(1)}M</span>
+      </div>`).join("");
+    return `<div class="group-head">${k} · ${items.length}</div>${rows}`;
+  }).join("");
+  const list = $("gallery-list");
+  list.innerHTML = html || `<div class="hint" style="padding:12px">Gallery empty — data_raw/ not found.</div>`;
+}
+
+function onGalleryItemClick(e) {
+  const item = e.target.closest(".gallery-item");
+  if (!item) return;
+  analyzeGalleryItem(item.dataset.id);
+}
+
+async function analyzeGalleryItem(id) {
+  setStatus("Loading gallery item…", "busy");
+  activeGalleryId = id;
+  document.querySelectorAll(".gallery-item").forEach(el =>
+    el.classList.toggle("active", el.dataset.id === id));
+  try {
+    const r = await fetch(`/gallery/${id}/analyze`, { method: "POST" });
+    if (!r.ok) throw new Error(r.status + ": " + await r.text());
+    const res = await r.json();
+    $("file-label").textContent = res.meta.filename || "(gallery)";
+    applyAnalysis(res);
+    setStatus("Loaded " + (res.meta.filename || id), "hint");
+  } catch (e) {
+    setStatus("Error: " + e.message, "err");
+  }
+}
+
+// ---------- Upload ---------------------------------------------------
+async function analyzeUpload(file) {
+  $("file-label").textContent = file.name;
+  setStatus("Uploading and analyzing…", "busy");
+  activeGalleryId = null;
+  document.querySelectorAll(".gallery-item.active").forEach(el => el.classList.remove("active"));
+  const fd = new FormData();
+  fd.append("file", file);
+  try {
+    const r = await fetch("/analyze", { method: "POST", body: fd });
+    if (!r.ok) throw new Error(r.status + ": " + await r.text());
+    const res = await r.json();
+    applyAnalysis(res);
+    setStatus("Done.", "hint");
+  } catch (e) {
+    setStatus("Error: " + e.message, "err");
+  }
+}
+
+$("file").addEventListener("change", (e) => {
+  const f = e.target.files[0];
+  if (f) analyzeUpload(f);
+});
+
+// ---------- Apply analysis (shared across upload + gallery click) ----
+function applyAnalysis(res) {
+  STATE.grid        = res.grid;
+  STATE.meta        = res.meta;
+  STATE.prediction  = res.prediction;
+  STATE.probs       = res.probabilities || {};
+  STATE.features    = res.features || null;
+  STATE.signature   = signatureColor(STATE.features, STATE.probs);
+
+  renderSurface(STATE.grid, STATE.meta);
+  renderMeta(STATE.meta);
+  renderPrediction(STATE.prediction, STATE.probs);
+  renderRainbow(STATE.probs, STATE.signature);
+
+  // Texture + print sources:
+  //   • Gallery items get two URLs: `bmp_url` = cropped + upscaled BMP
+  //     (the Bruker-rendered poster for the print tile), and `texture_url`
+  //     = raw-grid viridis render at 1024² (sharper on a curved mug than
+  //     upscaling 8-bit BMP luminance).
+  //   • Uploads have no paired BMP: server ships the raw-rendered texture
+  //     inline as a data URL which powers both the mug and the print.
+  const texUrl   = res.meta.texture_url || res.texture_url
+                 || gridToDataURL(STATE.grid);
+  const printUrl = res.meta.bmp_url     || res.texture_url
+                 || texUrl;
+  setMugTexture(texUrl);
+  setPrintImage(printUrl);
+
+  $("play-melody").disabled = false;
+}
+
+// ---------- Boot -----------------------------------------------------
+Plotly.react("plot-surface", [], {
+  paper_bgcolor: "#1a1d24",
+  font: { color: "#8a93a6" },
+  margin: { l: 0, r: 0, t: 0, b: 0 },
+  annotations: [{
+    text: "Upload a raw Bruker scan, or open the Gallery tab to pick an existing one.",
+    showarrow: false, font: { size: 14, color: "#8a93a6" },
+    xref: "paper", yref: "paper", x: 0.5, y: 0.5,
+  }],
+}, { responsive: true, displaylogo: false });
+
+$("gallery-list").addEventListener("click", onGalleryItemClick);
+initMug();
+loadGalleryManifest();
+</script>
+</body>
+</html>
