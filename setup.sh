@@ -28,7 +28,5 @@ else
   unzip -o data.zip -d data_raw
 fi
 
-
-
 python tearcls/data_split.py
 python tearcls/augmentation.py

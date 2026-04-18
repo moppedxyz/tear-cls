@@ -49,7 +49,9 @@ def _scan_line_artifact(image: np.ndarray, **_) -> np.ndarray:
         h = np.random.randint(1, 4)
         delta = np.random.randint(-10, 11)
         y0, y1 = y, min(H, y + h)
-        out[y0:y1] = np.clip(out[y0:y1].astype(np.int16) + delta, 0, 255).astype(np.uint8)
+        out[y0:y1] = np.clip(out[y0:y1].astype(np.int16) + delta, 0, 255).astype(
+            np.uint8
+        )
     return out
 
 
@@ -85,28 +87,40 @@ _AUGS: list[tuple[str, A.BasicTransform]] = [
     ("rotate", A.Rotate(limit=180, border_mode=cv2.BORDER_REFLECT_101, p=1.0)),
     ("hflip", A.HorizontalFlip(p=0.5)),
     ("vflip", A.VerticalFlip(p=0.5)),
-    ("affine", A.Affine(
-        translate_percent=(-0.08, 0.08),
-        scale=(1.0, 1.0),
-        rotate=0,
-        border_mode=cv2.BORDER_REFLECT_101,
-        p=0.5,
-    )),
-    ("rrcrop", A.RandomResizedCrop(
-        size=(384, 384),
-        scale=(0.75, 1.0),
-        ratio=(0.9, 1.1),
-        p=0.5,
-    )),
-    ("elastic", A.ElasticTransform(
-        alpha=30,
-        sigma=5,
-        border_mode=cv2.BORDER_REFLECT_101,
-        p=0.3,
-    )),
+    (
+        "affine",
+        A.Affine(
+            translate_percent=(-0.08, 0.08),
+            scale=(1.0, 1.0),
+            rotate=0,
+            border_mode=cv2.BORDER_REFLECT_101,
+            p=0.5,
+        ),
+    ),
+    (
+        "rrcrop",
+        A.RandomResizedCrop(
+            size=(384, 384),
+            scale=(0.75, 1.0),
+            ratio=(0.9, 1.1),
+            p=0.5,
+        ),
+    ),
+    (
+        "elastic",
+        A.ElasticTransform(
+            alpha=30,
+            sigma=5,
+            border_mode=cv2.BORDER_REFLECT_101,
+            p=0.3,
+        ),
+    ),
     # Photometric / scanner-realistic — tuned carefully
     ("colormap", A.Lambda(image=_colormap_remap, p=0.25)),
-    ("brightness_contrast", A.RandomBrightnessContrast(brightness_limit=0.15, contrast_limit=0.15, p=0.4)),
+    (
+        "brightness_contrast",
+        A.RandomBrightnessContrast(brightness_limit=0.15, contrast_limit=0.15, p=0.4),
+    ),
     ("gamma", A.RandomGamma(gamma_limit=(85, 115), p=0.3)),
     ("noise", A.GaussNoise(std_range=(0.02, 0.08), mean_range=(0.0, 0.0), p=0.3)),
     ("scanline", A.Lambda(image=_scan_line_artifact, p=0.25)),
@@ -163,7 +177,9 @@ def _main() -> None:
         description="Run the full augmentation pipeline on one image and dump samples.",
     )
     ap.add_argument("image", type=Path, help="Path to input image (e.g. a .bmp)")
-    ap.add_argument("--n", type=int, default=10, help="Number of augmented samples to write")
+    ap.add_argument(
+        "--n", type=int, default=10, help="Number of augmented samples to write"
+    )
     ap.add_argument("--out", type=Path, default=Path("test"), help="Output directory")
     ap.add_argument(
         "--enable",

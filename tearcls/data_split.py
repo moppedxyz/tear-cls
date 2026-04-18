@@ -11,16 +11,15 @@ OUT_DIR = REPO_ROOT / "data"
 OUT_CSV = OUT_DIR / "splits.csv"
 
 CLASS_MAP: dict[str, str] = {
-    "Diabetes":          "diabetes",
-    "PGOV_Glaukom":      "glaucoma",
+    "Diabetes": "diabetes",
+    "PGOV_Glaukom": "glaucoma",
     "SklerózaMultiplex": "multiple_sclerosis",
-    "SucheOko":          "dry_eye",
-    "ZdraviLudia":       "healthy",
+    "SucheOko": "dry_eye",
+    "ZdraviLudia": "healthy",
 }
 
 SEED = 3407
-VAL_FRAC = 0.1
-TEST_FRAC = 0.1
+EVAL_FRAC = 0.2  # held-out patients per class; val and test share this set
 
 
 def parse_patient_code(bmp_name: str) -> str:
@@ -39,30 +38,39 @@ def collect_rows() -> list[dict]:
         if not folder.is_dir():
             sys.exit(f"Missing class folder: {folder}")
         for bmp in sorted(folder.glob("*.bmp")):
-            rows.append({
-                "filepath":     bmp.relative_to(REPO_ROOT).as_posix(),
-                "class":        class_folder,
-                "label":        CLASS_MAP[class_folder],
-                "patient_code": parse_patient_code(bmp.name),
-            })
+            rows.append(
+                {
+                    "filepath": bmp.relative_to(REPO_ROOT).as_posix(),
+                    "class": class_folder,
+                    "label": CLASS_MAP[class_folder],
+                    "patient_code": parse_patient_code(bmp.name),
+                }
+            )
     rows.sort(key=lambda r: r["filepath"])
     return rows
 
 
-def assign_splits(rows: list[dict]) -> None:
+def assign_splits(rows: list[dict]) -> list[dict]:
     """Split per class: for each class, allocate that class's unique patients
-    to train/val/test at ~80/10/10. Guarantees every class appears in every
-    split AND no patient crosses splits.
+    to train vs. a held-out set at ~80/20. Guarantees every class appears in
+    train AND held-out (when it has ≥2 patients) AND no patient crosses
+    splits.
 
-    Fallback: a class with fewer than 3 unique patients can't be 3-way-split
-    by group, so it falls back to an image-level split for that class (logs a
-    WARN so the leakage is visible in the summary)."""
+    Val and test are merged into a single held-out set — with only a few
+    unique patients per class there aren't enough to support three disjoint
+    held-out groups without leakage. Each held-out row is emitted twice in
+    the output: once with split="val", once with split="test" — so downstream
+    loaders that expect both splits still work, and the two sets are
+    identical by construction.
+
+    Returns the expanded row list (not in-place)."""
     rng = random.Random(SEED)
 
     rows_by_class: dict[str, list[int]] = defaultdict(list)
     for i, r in enumerate(rows):
         rows_by_class[r["class"]].append(i)
 
+    out: list[dict] = []
     for cls in CLASS_MAP:
         class_indices = rows_by_class[cls]
         patient_to_rows: dict[str, list[int]] = defaultdict(list)
@@ -72,39 +80,29 @@ def assign_splits(rows: list[dict]) -> None:
         patients = sorted(patient_to_rows.keys())
         rng.shuffle(patients)
 
-        if len(patients) < 3:
-            print(f"WARN: class {cls} has only {len(patients)} patient(s); "
-                  f"falling back to image-level split within the class")
-            imgs = sorted(class_indices)
-            rng.shuffle(imgs)
-            m = len(imgs)
-            n_test = max(1, round(m * TEST_FRAC))
-            n_val = max(1, round(m * VAL_FRAC))
-            n_train = m - n_test - n_val
-            for i in imgs[:n_train]:
-                rows[i]["split"] = "train"
-            for i in imgs[n_train:n_train + n_val]:
-                rows[i]["split"] = "val"
-            for i in imgs[n_train + n_val:]:
-                rows[i]["split"] = "test"
+        if len(patients) == 1:
+            for i in patient_to_rows[patients[0]]:
+                out.append({**rows[i], "split": "train"})
+            print(
+                f"WARN: class {cls} has 1 patient; entire class routed to "
+                f"train (no val/test signal for this class)"
+            )
             continue
 
         n = len(patients)
-        n_test = max(1, round(n * TEST_FRAC))
-        n_val = max(1, round(n * VAL_FRAC))
-        test_groups = patients[:n_test]
-        val_groups = patients[n_test:n_test + n_val]
-        train_groups = patients[n_test + n_val:]
+        n_eval = max(1, round(n * EVAL_FRAC))
+        eval_patients = patients[:n_eval]
+        train_patients = patients[n_eval:]
 
-        for p in train_groups:
+        for p in train_patients:
             for i in patient_to_rows[p]:
-                rows[i]["split"] = "train"
-        for p in val_groups:
+                out.append({**rows[i], "split": "train"})
+        for p in eval_patients:
             for i in patient_to_rows[p]:
-                rows[i]["split"] = "val"
-        for p in test_groups:
-            for i in patient_to_rows[p]:
-                rows[i]["split"] = "test"
+                out.append({**rows[i], "split": "val"})
+                out.append({**rows[i], "split": "test"})
+
+    return out
 
 
 def summarize(rows: list[dict]) -> None:
@@ -117,17 +115,25 @@ def summarize(rows: list[dict]) -> None:
         patients_by_split[r["split"]].add(r["patient_code"])
 
     print(f"Total: {total} images across {len(CLASS_MAP)} classes")
-    print(f"Split: train={by_split['train']}  val={by_split['val']}  test={by_split['test']}")
+    print(
+        f"Split: train={by_split['train']}  val={by_split['val']}  test={by_split['test']}"
+    )
     print("Per-class (train/val/test):")
     for cls in CLASS_MAP:
         c = per_class_split[cls]
-        print(f"  {cls:20s}  train={c['train']:3d}  val={c['val']:3d}  test={c['test']:3d}")
+        print(
+            f"  {cls:20s}  train={c['train']:3d}  val={c['val']:3d}  test={c['test']:3d}"
+        )
 
-    tr, va, te = patients_by_split["train"], patients_by_split["val"], patients_by_split["test"]
+    tr, va, te = (
+        patients_by_split["train"],
+        patients_by_split["val"],
+        patients_by_split["test"],
+    )
     total_patients = len(tr | va | te)
     print(
         f"Patient leakage  train∩val={len(tr & va)}  train∩test={len(tr & te)}  "
-        f"val∩test={len(va & te)}  (total unique patients: {total_patients})"
+        f"(total unique patients: {total_patients}; val==test by design)"
     )
 
 
@@ -143,7 +149,7 @@ def write_csv(rows: list[dict]) -> None:
 
 def main() -> None:
     rows = collect_rows()
-    assign_splits(rows)
+    rows = assign_splits(rows)
     write_csv(rows)
     summarize(rows)
 

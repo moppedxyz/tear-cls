@@ -24,7 +24,9 @@ def compute_metrics(gold: list[str], pred: list[str]) -> dict:
     }
     return {
         "accuracy": sum(g == p for g, p in zip(gold, pred)) / len(gold),
-        "f1_macro": f1_score(gold, pred, labels=CLASSES, average="macro", zero_division=0),
+        "f1_macro": f1_score(
+            gold, pred, labels=CLASSES, average="macro", zero_division=0
+        ),
         "per_class_acc": per_class_acc,
         "support": {cls: total[cls] for cls in CLASSES},
         "n": len(gold),
