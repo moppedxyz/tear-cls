@@ -23,6 +23,7 @@ dependencies = [
     "ruff>=0.15.11",
     "ty>=0.0.31",
     "black>=26.3.1",
+    "matplotlib>=3.10.8",
 ]
 
 [tool.uv]
