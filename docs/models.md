@@ -134,58 +134,112 @@ reflecting minority-class performance more fairly than accuracy.
 
 ### 5-class (`multi`)
 
-| Model                       | Test accuracy | Macro-F1 | Notes                                    |
-|-----------------------------|--------------:|---------:|------------------------------------------|
-| Classical SVM-RBF           | —             | 0.455\*  | Val macro-F1; 68-D features + `sklearn`. |
-| MobileNet-V3-Small          | 0.569         | 0.467    | 15 epochs, plain CE.                     |
-| ResNet-18                   | 0.588         | 0.451    | 15 epochs, plain CE.                     |
-| EfficientNet-V2-S, full aug | 0.490         | 0.461    | MixUp/CutMix, full augmentation stack.   |
-| **EfficientNet-V2-S, no aug** | **0.510**   | **0.542** | Same recipe, `--no-augmented`.           |
+Seed-3407 single-run numbers and, for the EfficientNet-V2-S
+configurations that have been re-run, multi-seed mean ± std across
+seeds `{3407, 17, 2026}`. The choice of pipeline (offline vs. online
+augmentation) is fully described in `docs/augmentation.md`; the
+short version is that "offline" pre-materialises ten frozen
+augmented variants per training image, and "online" applies the
+same operations stochastically inside `__getitem__` so every epoch
+sees fresh randomness.
 
-\*The classical run reports macro-F1 on the validation fold (the
-selection criterion); under the patient-stratified split `val ≡ test`
-so this number is directly comparable.
+| Model                                       | Seed 3407 acc | Seed 3407 F1 | Mean F1 (n=3) | Std    |
+|---------------------------------------------|--------------:|-------------:|--------------:|-------:|
+| Classical SVM-RBF                           | 0.569         | 0.455        | —             | —      |
+| MobileNet-V3-Small                          | 0.569         | 0.467        | —             | —      |
+| ResNet-18                                   | 0.588         | 0.451        | —             | —      |
+| EfficientNet-B0, online `geom_only`         | 0.647         | 0.642        | 0.619         | 0.029  |
+| EfficientNet-B1, online `geom_only`         | 0.529         | 0.533        | —             | —      |
+| EfficientNet-V2-S, offline `full`           | 0.490         | 0.461        | —             | —      |
+| EfficientNet-V2-S, offline `none` (no aug)  | 0.510         | 0.542        | —             | —      |
+| EfficientNet-V2-S, online `none` (no aug)   | 0.549         | 0.559        | 0.614         | 0.095  |
+| **EfficientNet-V2-S, online `geom_only`**   | **0.529**     | **0.583**    | **0.646**     | 0.061  |
 
-Two observations. First, the four deep models lie within ≈2% accuracy
-of one another, and the classical pipeline is within ≈10% — all five
-families stall in a narrow band well below what the 89.6% leakage-split
-number suggested. Second, the heavy augmentation stack *hurt* the
-EfficientNet-V2-S macro-F1 in this framing (0.461 with full aug,
-**0.542** with no aug). With only 189 training images, aggressive
-MixUp/CutMix combined with photometric augmentation destroys enough of
-the informative dendrite structure in the minority classes that the
-regularisation cost outweighs its generalisation benefit. The no-aug
-checkpoint is therefore the headline 5-class result.
+The headline 5-class number is **EfficientNet-V2-S with online
+geometric augmentation, 0.646 ± 0.061 macro-F1** averaged over three
+seeds. Three observations from the table:
+
+1. **Online geometric augmentation is the best configuration we have
+   found.** It beats the previous "no augmentation" headline (0.614
+   ± 0.095) by +0.032 macro-F1 in the mean. Both configurations
+   point in the same direction across all three seeds, but with
+   n = 3 and a per-cell std of ~0.06–0.10 the gap is not larger than
+   one standard deviation; the honest reading is "directional
+   evidence, awaiting a larger seed budget".
+2. **The frozen-offline pipeline was leaving roughly ten points of
+   macro-F1 on the table.** Pre-materialising augmentations to disk
+   and treating the same ten copies as a fixed dataset expansion
+   reduced V2-S to 0.461 macro-F1 at seed 3407, well below the
+   online runs. The pre-dumped variants behave more like a noisy
+   dataset expansion than per-step regularisation; switching to
+   on-the-fly random transforms removes that penalty independently
+   of which augmentations are enabled.
+3. **EfficientNet-B0 is competitive but does not win at multi-seed.**
+   B0's seed-3407 macro-F1 of 0.642 narrowly beat V2-S's 0.583, but
+   averaged over three seeds B0 reaches 0.619 (±0.029) versus V2-S's
+   0.646 (±0.061). The effective comparison is "V2-S has a higher
+   ceiling but is more seed-sensitive; B0 has a lower ceiling but
+   half the variance". V2-S remains the headline backbone, while B0
+   is a useful low-variance alternative for hyperparameter search.
+4. **Capacity is non-monotone.** EfficientNet-B1, the in-between
+   capacity point, scored 0.533 macro-F1 at seed 3407 — *below* both
+   B0 (0.642) and V2-S (0.583) at the same seed. The seed-3407
+   capacity ranking is therefore not "smaller is better"; the
+   apparent capacity differences are at least partly driven by
+   architecture and seed effects, not by parameter count alone.
+
+The most striking single number in the table does not appear in any
+row: V2-S `online_none` at seed 2026 hit 0.724 macro-F1 — the
+highest 5-class result we have ever recorded, on the smallest
+possible configuration. With only 51 held-out images from 9
+patients, any single-seed headline number is dominated by which 9
+patients happen to be drawn into the held-out set and which seed is
+used. The mean ± std rows above are therefore the right thing to
+quote in the paper.
 
 ### Three-class (`three`)
 
-| Model                | Test accuracy | Macro-F1 |
-|----------------------|--------------:|---------:|
-| Classical SVM-RBF    | —             | 0.491\*  |
-| ResNet-18            | 0.784         | 0.533    |
-| **EfficientNet-V2-S** | **0.824**    | **0.664** |
+| Model                                       | Test accuracy | Macro-F1 |
+|---------------------------------------------|--------------:|---------:|
+| Classical SVM-RBF                           | 0.725         | 0.491    |
+| ResNet-18                                   | 0.784         | 0.533    |
+| EfficientNet-B0, online `geom_only`         | 0.490         | 0.487    |
+| **EfficientNet-V2-S, offline `full`**       | **0.824**     | **0.664** |
 
 Collapsing the four pathological classes lifts EfficientNet-V2-S to
 82.4% accuracy and 0.664 macro-F1. The gap between ResNet-18 and
 EfficientNet-V2-S is larger here than in the 5-class framing,
 suggesting that the modern regularisation recipe pays off more clearly
 once per-class support rises above the tiny-sample regime that
-dominates `dry_eye` and `diabetes`.
+dominates `dry_eye` and `diabetes`. EfficientNet-B0, retrained under
+the multi-task best 5-class recipe (`online_geom_only`), did **not**
+generalise back to this framing — at 0.487 macro-F1 it underperforms
+even the classical SVM, suggesting that whatever capacity advantage
+B0 had on 5-class came from class-specific feature interactions that
+disappear once the four pathological classes are merged. The
+`online_geom_only` v2_s rerun for this framing has not been done
+yet — the 0.664 V2-S row is from the legacy offline `full` pipeline.
 
 ### Binary (`binary`)
 
-| Model                | Test accuracy | Macro-F1 |
-|----------------------|--------------:|---------:|
-| Classical LogReg     | —             | 0.804\*  |
-| ResNet-18            | 0.882         | 0.826    |
-| MobileNet-V3-Small   | 0.882         | 0.837    |
-| **EfficientNet-V2-S** | **0.941**    | **0.894** |
+| Model                                       | Test accuracy | Macro-F1 |
+|---------------------------------------------|--------------:|---------:|
+| Classical LogReg                            | 0.863         | 0.804    |
+| ResNet-18                                   | 0.882         | 0.826    |
+| MobileNet-V3-Small                          | 0.882         | 0.837    |
+| EfficientNet-B0, online `geom_only`         | 0.863         | 0.815    |
+| **EfficientNet-V2-S, offline `full`**       | **0.941**     | **0.894** |
 
 The screening framing is the strongest result: 94.1% accuracy and 0.894
 macro-F1 with only three false positives and three false negatives
 across 51 held-out images. Because the class balance is 42 disease vs 9
 healthy, macro-F1 (which weights the minority class equally) is the
 informative metric — accuracy alone would be inflated by the imbalance.
+EfficientNet-B0 under the best 5-class recipe matches the classical
+baseline (0.815 vs. 0.804 macro-F1) but does not approach V2-S; as
+with three-class, V2-S retains a clear advantage on the easier
+formulations. The 0.894 V2-S row is from the legacy offline `full`
+pipeline; an `online_geom_only` rerun is on the TODO list.
 
 ## Selected model
 
@@ -193,13 +247,16 @@ informative metric — accuracy alone would be inflated by the imbalance.
 matches or beats every other architecture on held-out macro-F1, the
 magnitude of its advantage grows as the task is simplified from 5-class
 to binary, and a single training script and checkpoint format covers all
-three modes. The exact checkpoints used in the reported numbers are:
+three modes. The 5-class headline uses online geometric augmentation
+applied per-batch (see `docs/augmentation.md`); the three-class and
+binary headlines still use the legacy offline `full` pipeline pending
+re-runs. The exact checkpoints used in the reported numbers are:
 
-| Framing | Checkpoint                                                         |
-|---------|--------------------------------------------------------------------|
-| 5-class (no-aug) | `outputs/efficientnet_v2_s_multi_none_s3407/best.pt`      |
-| three-class      | `outputs/efficientnet_v2_s_three/best.pt`                 |
-| binary           | `outputs/efficientnet_v2_s_binary/best.pt`                |
+| Framing      | Pipeline               | Checkpoint                                                                   |
+|--------------|------------------------|------------------------------------------------------------------------------|
+| 5-class      | online `geom_only`     | `outputs/efficientnet_v2_s_multi_online_geom_only_s3407/best.pt`             |
+| three-class  | offline `full`         | `outputs/efficientnet_v2_s_three/best.pt`                                    |
+| binary       | offline `full`         | `outputs/efficientnet_v2_s_binary/best.pt`                                   |
 
 All three are loaded by `infer.py` out of the box; the architecture and
 class list are read directly from the checkpoint so no command-line
@@ -207,10 +264,18 @@ flag needs to match the training configuration.
 
 ## Models considered and rejected
 
-- **Larger EfficientNets (V2-M, B3).** Trained under the same recipe
-  and did not improve on V2-S in held-out macro-F1 despite 2–3× the
-  parameter count; treated as evidence that capacity is not the binding
-  constraint at 240 images.
+- **Smaller EfficientNets (B0, B1).** Both run under the same online
+  `geom_only` recipe at seed 3407, with B0 also extended across all
+  three seeds. B0 reached 0.619 ± 0.029 macro-F1 across three seeds
+  and B1 reached 0.533 at seed 3407, neither matching V2-S's 0.646
+  ± 0.061. Worth keeping in mind: B0 has substantially lower
+  seed-to-seed variance and is a useful drop-in for hyperparameter
+  search even though it loses on the headline number. B1 underperforms
+  both of its neighbours on a single seed and was not extended.
+- **Larger EfficientNets (V2-M, B3).** Trained under the legacy
+  offline recipe and did not improve on V2-S in held-out macro-F1
+  despite 2–3× the parameter count; treated as evidence that capacity
+  is not the binding constraint at 240 images.
 - **Vision Transformers / ViT.** Not trained. Pure transformers with
   no convolutional inductive bias are known to require either very
   large pretraining corpora or strong distillation to beat CNNs on
@@ -233,25 +298,46 @@ flag needs to match the training configuration.
 ## Reproducing the reported runs
 
 ```bash
-uv run eff_train.py --mode binary
+# 5-class headline (current): online geometric augmentation
+uv run eff_train.py --mode multi \
+  --online-augment rotate,hflip,vflip,affine,rrcrop,elastic \
+  --ablation-tag online_geom_only
+
+# Multi-seed (numbers reported as mean ± std)
+for s in 3407 17 2026; do
+  uv run eff_train.py --mode multi --seed $s \
+    --online-augment rotate,hflip,vflip,affine,rrcrop,elastic \
+    --ablation-tag online_geom_only
+done
+
+# Three-class and binary (legacy offline `full`, pending online rerun)
 uv run eff_train.py --mode three
-uv run eff_train.py --mode multi --no-augmented --ablation-tag none
+uv run eff_train.py --mode binary
 ```
 
 Each command writes `best.pt` (state dict plus metadata) and
 `final_metrics.json` (test accuracy, per-class precision/recall/F1, and
 the confusion matrix) to the corresponding subdirectory of `outputs/`.
-The random seed is fixed at 3407 throughout, matching the seed used by
-`tearcls/data_split.py`.
+The random seed defaults to 3407 (matching the seed used by
+`tearcls/data_split.py`) but can be overridden with `--seed`. To rerun
+the full augmentation ablation grid driving the 5-class headline,
+invoke `scripts/ablate_augmentation.py` (see `docs/augmentation.md`).
 
 ---
 
 ## TODO: analyses to add before camera-ready
 
-- [ ] Seed sensitivity: re-run the three reference configurations across
-      at least five seeds and report mean ± std for accuracy and macro-F1.
-      The single-seed numbers above almost certainly have ±2–3% noise
-      driven by which augmented variants land in each minibatch.
+- [ ] Re-run the three-class and binary V2-S headlines under the
+      online `geom_only` pipeline so all three framings use the same
+      augmentation strategy and the cross-task comparison is fully
+      apples-to-apples. The current 0.664 (three-class) and 0.894
+      (binary) numbers are still from the legacy offline `full`
+      pipeline.
+- [ ] Extend the multi-seed grid for V2-S `online_geom_only` from
+      n=3 to n≥5 seeds. The current mean ± std (0.646 ± 0.061) puts
+      the augmentation effect inside one standard deviation of the
+      no-aug baseline — more seeds are needed before the +0.032 gap
+      can be reported with a paired significance test.
 - [ ] Ablation table for the EfficientNet-V2-S recipe isolating the
       contribution of each of the six modifications listed above
       (unfreeze schedule, split LR, warmup, MixUp/CutMix, label

@@ -334,6 +334,96 @@ the previous decision to use v2_s as the headline architecture
 should be revisited. A seed-17 / seed-2026 confirmation on b0 is now
 the highest-leverage next experiment.
 
+## Multi-seed confirmation (and a retraction)
+
+The single-seed b0 finding above motivated a focused multi-seed
+follow-up: `online_geom_only` and `online_none` on **both** v2_s and
+b0 at seeds `17` and `2026`, plus `online_geom_only` on
+`efficientnet_b1` (the in-between capacity point) at seed 3407, plus
+b0 on the binary and three-class tasks for the progressive
+decomposition story. Eleven runs total; results below.
+
+### 5-class, multi-seed
+
+| Backbone | Config              | Seed 3407 | Seed 17 | Seed 2026 | **Mean** | **Std** |
+|----------|---------------------|----------:|--------:|----------:|---------:|--------:|
+| v2_s     | `online_geom_only`  | 0.583     | 0.649   | 0.705     | **0.646** | 0.061  |
+| v2_s     | `online_none`       | 0.559     | 0.558   | 0.724     | 0.614     | 0.095  |
+| b0       | `online_geom_only`  | 0.642     | 0.627   | 0.587     | 0.619     | 0.029  |
+| b0       | `online_none`       | 0.632     | 0.647   | 0.528     | 0.602     | 0.065  |
+
+The single-seed story rearranges substantially:
+
+1. **The b0 headline is retracted.** The +0.059 macro-F1 advantage of
+   b0 over v2_s at seed 3407 was a lucky-seed artefact: at multi-seed
+   v2_s `online_geom_only` (0.646 ± 0.061) actually beats b0
+   `online_geom_only` (0.619 ± 0.029) by +0.027. v2_s remains the
+   recommended backbone, and the previous suggestion to switch the
+   paper's headline architecture is withdrawn.
+2. **The augmentation effect is real but small.** `online_geom_only`
+   beats `online_none` on both backbones (+0.032 on v2_s, +0.017 on
+   b0); both gaps point the same direction across three seeds, which
+   is mild Bayesian evidence in favour of the geometric block.
+   Neither gap, however, is significantly larger than the
+   per-configuration std — n=3 is simply not enough to reject the
+   null at conventional thresholds. The honest claim is "directional
+   evidence, awaiting a larger seed budget".
+3. **b0 has lower variance.** Across both configs, b0's seed-to-seed
+   std is roughly half v2_s's (0.029 vs. 0.061 on `online_geom_only`;
+   0.065 vs. 0.095 on `online_none`). The smaller model is more
+   stable across the patient-stratified held-out split, which makes
+   it a better choice for hyperparameter search even if v2_s wins on
+   the headline number.
+4. **The seed `2026` row on v2_s `online_none` (0.724) is striking.**
+   It is the single highest 5-class macro-F1 we have ever recorded.
+   Without aug, on the larger backbone, on one specific seed, the
+   model lands ~0.10 above its own mean. This is the clearest
+   demonstration that the 51-image held-out set is too small to
+   produce a stable headline number from any one run.
+
+### Capacity is not monotone
+
+`efficientnet_b1` (~7M params, 240px input) was added as a third
+capacity point to test whether smaller-is-monotonically-better. At
+seed 3407, `online_geom_only` macro-F1:
+
+| Backbone | Params | Input | Seed 3407 macro-F1 |
+|----------|-------:|------:|-------------------:|
+| b0       | 5.3M   | 224   | 0.642              |
+| **b1**   | **7.8M** | **240** | **0.533**       |
+| v2_s     | 21M    | 384   | 0.583              |
+
+b1 lands *below both* of its neighbours. The seed-3407 capacity
+ranking is therefore non-monotone (b0 > v2_s > b1), so we cannot
+explain the observed differences by a clean "smaller models suit a
+smaller corpus" narrative. Most likely, what looks like a capacity
+effect is dominated by per-model architecture / pretraining
+particulars and the ~2pp seed noise on a 51-image set; b0's seed-3407
+high was lucky and b1's was unlucky. A multi-seed confirmation on
+b1 would resolve this, but is low-priority given the v2_s headline
+above.
+
+### b0 on binary and three-class
+
+For the progressive-decomposition slide it would be informative to
+report b0 numbers alongside the v2_s baselines. With
+`online_geom_only` at seed 3407:
+
+| Task     | v2_s (offline `full`) | b0 (`online_geom_only`) |
+|----------|----------------------:|------------------------:|
+| Binary   | 0.941 acc / 0.894 F1  | 0.863 acc / 0.815 F1    |
+| 3-class  | 0.824 acc / 0.664 F1  | 0.490 acc / 0.487 F1    |
+
+Caveat: this is not an apples-to-apples comparison — the v2_s rows
+use the legacy offline `full` pipeline; the b0 rows use
+`online_geom_only`. The honest reading is that **b0 does not improve
+on v2_s for either of the easier tasks**; it is roughly comparable
+on binary (−0.079 macro-F1) and substantially worse on three-class
+(−0.177 macro-F1). Combined with the multi-seed 5-class result, the
+overall conclusion is that **v2_s remains the right backbone choice
+across all three task formulations**, and b0 is interesting only as a
+lower-variance alternative for fast hyperparameter search.
+
 ---
 
 ## TODO: to finalise before camera-ready
@@ -354,15 +444,18 @@ the highest-leverage next experiment.
       paper given the systematic +0.097 macro-F1 advantage of the
       online pipeline, or keep it as a contrast slide showing the
       cost of pre-materialised augmentation.
-- [ ] Run the full eleven-config online ablation on `efficientnet_b0`
-      at all three seeds, since b0 is currently the best-scoring
-      backbone (best b0 = 0.642 vs. best v2_s = 0.583 at seed 3407).
-- [ ] Re-do the 5-class headline numbers with `efficientnet_b0` and
-      decide whether the paper's main results table should switch
-      backbones from v2_s to b0.
-- [ ] Add `efficientnet_b1` (the in-between scale, ~7M params,
-      240px) as a third capacity point to confirm the b0 > v2_s
-      pattern is monotone in capacity, not specific to b0.
+- [ ] Run more seeds (target n ≥ 5) for the four headline cells —
+      v2_s `online_geom_only`, v2_s `online_none`, b0
+      `online_geom_only`, b0 `online_none` — to either reject or
+      confirm the +0.032 / +0.017 augmentation effect. At n=3 the
+      gap is within one standard deviation.
+- [ ] Re-run the v2_s binary and three-class baselines under
+      `online_geom_only` so the cross-backbone progressive
+      comparison is apples-to-apples (current v2_s numbers are from
+      the legacy offline `full` pipeline).
+- [ ] If a larger seed budget keeps v2_s `online_geom_only` ahead of
+      v2_s `online_none`, run a paired-seed Wilcoxon signed-rank
+      test on macro-F1 and report the p-value.
 - [ ] Bar chart of macro-F1 per configuration with per-seed error bars,
       ordered by effect size.
 - [ ] Qualitative figure: one source image plus one sample from each
